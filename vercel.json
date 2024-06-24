@@ -5,7 +5,7 @@
   ],
   "routes": [
     {
-      "src": "/convert",
+      "src": "/src",
       "methods": ["POST"],
       "dest": "app.py"
     }
