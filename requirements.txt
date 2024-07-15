@@ -1,3 +1,5 @@
-Flask==2.0.3
-docxtpl==0.16.8
-requests==2.18.4
+Flask
+flask-cors
+docxtpl
+requests
+python-docx
