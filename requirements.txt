@@ -3,3 +3,4 @@ flask-cors
 docxtpl
 requests
 python-docx
+boto3
