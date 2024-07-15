@@ -1,76 +1,45 @@
-from flask import Flask, request, send_file, jsonify, make_response
-from flask_cors import CORS
-from docxtpl import DocxTemplate, InlineImage
-from docx.shared import Mm
-import os
+from flask import Flask, request, send_file, jsonify
 import requests
-import boto3
-from botocore.exceptions import NoCredentialsError
-import subprocess
+import io
 
 app = Flask(__name__)
-CORS(app)
 
-# Configurações do S3
-S3_BUCKET = 'http://185.228.72.82:9000/ibaverde'
-S3_KEY = '89AppwYBiRtWSpAkvT0F'
-S3_SECRET = '5KBTHFq2A6xiYSicbzTC3JS59YxYg8FuluEzr55b'
+@app.route('/get-pdf', methods=['POST'])
+def get_pdf():
+    api_url = "https://185.228.72.82:9002/generate-doc"
 
-s3 = boto3.client('s3', aws_access_key_id=S3_KEY, aws_secret_access_key=S3_SECRET)
-
-@app.route('/generate-doc', methods=['POST'])
-def generate_doc():
-    if 'template' not in request.files:
-        return jsonify({"error": "No template file provided"}), 400
-
-    template_file = request.files['template']
-    template_path = os.path.join('/tmp', template_file.filename)
-    template_file.save(template_path)
-
-    remetente = request.form.get('remetente')
-    destinatario = request.form.get('destinatario')
-    texto = request.form.get('texto')
-    image_url = request.form.get('url')
-
-    image_path = '/tmp/temp_image.png'
-    response = requests.get(image_url)
-    if response.status_code == 200:
-        with open(image_path, 'wb') as f:
-            f.write(response.content)
-    else:
-        return jsonify({"error": "Unable to fetch the image from the URL"}), 400
-
-    tpl = DocxTemplate(template_path)
-
-    context = {
-        'remetente': remetente,
-        'destinatario': destinatario,
-        'texto': texto,
-        'images': InlineImage(tpl, image_path, height=Mm(100))
+    # Parâmetros da solicitação
+    data = {
+        'remetente': request.form.get('remetente'),
+        'destinatario': request.form.get('destinatario'),
+        'texto': request.form.get('texto'),
+        'url': request.form.get('url')
     }
 
-    tpl.render(context)
+    # Arquivo de template
+    template_file = request.files.get('template')
+    if not template_file:
+        return jsonify({"error": "No template file provided"}), 400
 
-    output_docx_path = os.path.join('/tmp', 'output.docx')
-    tpl.save(output_docx_path)
-
-    output_pdf_path = os.path.join('/tmp', 'output.pdf')
-    subprocess.run(['unoconv', '-f', 'pdf', '-o', output_pdf_path, output_docx_path])
+    files = {
+        'template': template_file
+    }
 
     try:
-        s3.upload_file(output_pdf_path, S3_BUCKET, 'output.pdf')
-    except NoCredentialsError:
-        return jsonify({"error": "Credentials not available"}), 400
+        # Enviar solicitação POST para a API
+        response = requests.post(api_url, files=files, data=data)
 
-    # Limpar arquivos temporários
-    os.remove(template_path)
-    os.remove(image_path)
-    os.remove(output_docx_path)
-    os.remove(output_pdf_path)
-
-    return jsonify({"message": "Document generated successfully", "s3_url": f"https://{S3_BUCKET}.s3.amazonaws.com/output.pdf"}), 200
+        # Verificar se a solicitação foi bem-sucedida
+        if response.status_code == 200:
+            # Retornar o PDF na resposta
+            return send_file(io.BytesIO(response.content), attachment_filename='output.pdf', as_attachment=True)
+        else:
+            return jsonify({"error": "Failed to generate PDF", "status": response.status_code, "message": response.text}), response.status_code
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)
+
 
 
